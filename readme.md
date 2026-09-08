@@ -9,26 +9,15 @@
 
 [![Deployed on HuggingFace](https://img.shields.io/badge/Deployed%20On-HuggingFace-b7fc1d?style=for-the-badge&logo=huggingface&logoColor=black)](https://not-omega-inference.hf.space/)
 
+## System Architecture
 
-A blazing-fast **50M parameter Small Language Model** inference engine built from scratch in C++, served via a Python FastAPI backend.
-
-> **Benchmark:** ~28 tok/s | ~35ms/token on Intel i3 11th Gen (8GB RAM, Windows 11)
-
-## 🧠 How to get the Model Weights (`model.bin`)
-
-To train the model and generate your own `model.bin` and `tokenizer.bin` files, simply open the Google Colab notebook below. It is fully optimized to train on Colab's Free Tier GPU (T4).
-
-1. Open the notebook link below.
-2. Change the runtime to **GPU** (`Runtime` > `Change runtime type` > `T4 GPU`).
-3. Run all cells to train and export the binary weights.
+<img width="1731" height="789" alt="image" src="https://github.com/user-attachments/assets/5c457323-ce10-4ead-a2ec-8d4466f0d5b2" />
 
 
-[https://colab.research.google.com/drive/1UEjL2YZmyxs5ZkdxN_aPT8ceApb3a-Xx?usp=sharing](https://colab.research.google.com/drive/1UEjL2YZmyxs5ZkdxN_aPT8ceApb3a-Xx?usp=sharing)
+<img width="858" height="799" alt="image" src="https://github.com/user-attachments/assets/21dce5ce-f08e-443c-bc41-8a6f055317d1" />
 
----
 
-<img width="1523" height="836" alt="image" src="https://github.com/user-attachments/assets/450013b5-7f1c-4b50-9fc4-a0d162896b76" />
-
+*Interactive Design Document: [HHD Design](https://app.eraser.io/workspace/RMsX2vhTVpB6uaZgnBqV?origin=share)*
 
 ## 📊 Benchmark Report
 For full details, metrics, and hardware comparisons, you can view the complete [Benchmark Report](BENCHMARK_REPORT.md).
