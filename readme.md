@@ -30,6 +30,12 @@ To train the model and generate your own `model.bin` and `tokenizer.bin` files, 
 <img width="1523" height="836" alt="image" src="https://github.com/user-attachments/assets/450013b5-7f1c-4b50-9fc4-a0d162896b76" />
 
 
+## 📊 Benchmark Report
+For full details, metrics, and hardware comparisons, you can view the complete [Benchmark Report](BENCHMARK_REPORT.md).
+
+*(Or copy-paste the contents of your BENCHMARK_REPORT.md right here)*
+
+
 ## 🏗️ Architecture
 
 ```
