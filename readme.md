@@ -33,7 +33,6 @@ To train the model and generate your own `model.bin` and `tokenizer.bin` files, 
 ## 📊 Benchmark Report
 For full details, metrics, and hardware comparisons, you can view the complete [Benchmark Report](BENCHMARK_REPORT.md).
 
-*(Or copy-paste the contents of your BENCHMARK_REPORT.md right here)*
 
 
 ## 🏗️ Architecture
