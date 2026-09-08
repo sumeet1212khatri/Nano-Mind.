@@ -5,7 +5,7 @@
 ![Focus](https://img.shields.io/badge/focus-Systems%20Engineering-red?style=for-the-badge)
 
 
-# Live Demo
+## Live Demo
 
 [![Deployed on HuggingFace](https://img.shields.io/badge/Deployed%20On-HuggingFace-b7fc1d?style=for-the-badge&logo=huggingface&logoColor=black)](https://not-omega-inference.hf.space/)
 
