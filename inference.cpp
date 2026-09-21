@@ -1,693 +1,394 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SLM · Story Engine</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --ink:    #1a1209;
-    --paper:  #f5f0e8;
-    --aged:   #e8e0cc;
-    --sepia:  #8b6914;
-    --rust:   #c0392b;
-    --green:  #27ae60;
-    --shadow: rgba(26,18,9,0.15);
-  }
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  body {
-    background: var(--paper);
-    color: var(--ink);
-    font-family: 'Playfair Display', Georgia, serif;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 40px 20px 80px;
-    background-image:
-      repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 27px,
-        rgba(139,105,20,0.08) 28px
-      );
-    background-size: 100% 28px;
-  }
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <time.h>
+#include <vector>
+#include <algorithm>
+#include <immintrin.h> 
 
-  /* ---- Status Badge ---- */
-  .status-badge {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.65rem;
-    padding: 6px 12px;
-    border-radius: 20px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    z-index: 100;
-    transition: all 0.3s;
-  }
-  .status-badge.connected {
-    background: rgba(39, 174, 96, 0.15);
-    color: var(--green);
-    border: 1px solid var(--green);
-  }
-  .status-badge.disconnected {
-    background: rgba(192, 57, 43, 0.15);
-    color: var(--rust);
-    border: 1px solid var(--rust);
-  }
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    animation: pulse 2s ease-in-out infinite;
-  }
-  .status-badge.connected .status-dot { background: var(--green); }
-  .status-badge.disconnected .status-dot { background: var(--rust); }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
-  /* ---- Header ---- */
-  header {
-    text-align: center;
-    margin-bottom: 48px;
-    position: relative;
-  }
-  header::after {
-    content: '';
-    display: block;
-    width: 120px;
-    height: 2px;
-    margin: 16px auto 0;
-    background: linear-gradient(90deg, transparent, var(--sepia), transparent);
-  }
-  .masthead {
-    font-size: clamp(2.2rem, 6vw, 3.6rem);
-    font-weight: 700;
-    letter-spacing: -1px;
-    line-height: 1;
-    color: var(--ink);
-  }
-  .masthead em { color: var(--sepia); font-style: italic; }
-  .subtitle {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.72rem;
-    font-weight: 300;
-    letter-spacing: 4px;
-    text-transform: uppercase;
-    color: var(--sepia);
-    margin-top: 10px;
-  }
+typedef struct {
+    int n_layer;
+    int n_head;
+    int n_embd;
+    int block_size;
+    int vocab_size;
+} Config;
 
-  /* ---- Card ---- */
-  .card {
-    width: 100%;
-    max-width: 760px;
-    background: #faf7f0;
-    border: 1px solid var(--aged);
-    border-radius: 2px;
-    box-shadow: 4px 4px 0 var(--shadow), 8px 8px 0 rgba(26,18,9,0.06);
-    padding: 36px 40px;
-    position: relative;
-  }
-  .card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 36px; right: 36px;
-    height: 3px;
-    background: linear-gradient(90deg, transparent, var(--sepia) 30%, var(--sepia) 70%, transparent);
-    opacity: 0.5;
-  }
+typedef struct {
+    float* wte; float* wpe;
+    float** ln1_w; float** ln1_b;
+    float** c_attn_w; float** c_attn_b;
+    float** c_proj_w; float** c_proj_b;
+    float** ln2_w; float** ln2_b;
+    float** fc_w; float** fc_b;
+    float** mlp_proj_w; float** mlp_proj_b;
+    float* ln_f_w; float* ln_f_b;
+    float* lm_head_w;
+} Weights;
 
-  /* ---- Performance Stats (NEW) ---- */
-  .perf-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 12px;
-    margin-bottom: 24px;
-    padding: 16px;
-    background: rgba(139,105,20,0.04);
-    border-radius: 2px;
-    border: 1px solid var(--aged);
-  }
-  .stat-item {
-    text-align: center;
-  }
-  .stat-value {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 1.4rem;
-    font-weight: 400;
-    color: var(--sepia);
-    line-height: 1;
-    margin-bottom: 4px;
-  }
-  .stat-label {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    color: rgba(26,18,9,0.5);
-  }
+typedef struct { float* k_cache; float* v_cache; } KVCache;
 
-  /* ---- Controls ---- */
-  .controls-row {
-    display: flex;
-    gap: 24px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-  .control-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    flex: 1;
-    min-width: 120px;
-  }
-  label {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--sepia);
-    font-weight: 400;
-  }
-  input[type="range"] {
-    -webkit-appearance: none;
-    width: 100%;
-    height: 2px;
-    background: var(--aged);
-    outline: none;
-    cursor: pointer;
-  }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    background: var(--sepia);
-    border: 2px solid var(--paper);
-    box-shadow: 0 0 0 1px var(--sepia);
-    transition: transform 0.15s;
-  }
-  input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.3); }
-  input[type="range"]::-moz-range-thumb {
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    background: var(--sepia);
-    border: 2px solid var(--paper);
-    box-shadow: 0 0 0 1px var(--sepia);
-    cursor: pointer;
-  }
-  .range-val {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--ink);
-    font-weight: 400;
-    opacity: 0.7;
-  }
+static Config cfg;
+static Weights W;
+static float* model_data_buffer = NULL;
 
-  /* ---- Prompt area ---- */
-  .prompt-wrap {
-    position: relative;
-    margin-bottom: 20px;
-  }
-  .prompt-label {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--sepia);
-    margin-bottom: 8px;
-    display: block;
-  }
-  textarea {
-    width: 100%;
-    min-height: 90px;
-    resize: vertical;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--aged);
-    font-family: 'Playfair Display', serif;
-    font-size: 1.05rem;
-    color: var(--ink);
-    line-height: 1.7;
-    padding: 8px 0;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  textarea::placeholder { color: rgba(26,18,9,0.3); font-style: italic; }
-  textarea:focus { border-bottom-color: var(--sepia); }
+static void layer_norm(float* out, const float* x, const float* w, const float* b, int size) {
+    float mean = 0.0f, var = 0.0f;
 
-  /* ---- Button ---- */
-  .btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  button {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    padding: 12px 32px;
-    border: 1.5px solid var(--ink);
-    background: var(--ink);
-    color: var(--paper);
-    cursor: pointer;
-    transition: all 0.18s;
-    border-radius: 1px;
-  }
-  button:hover:not(:disabled) {
-    background: var(--sepia);
-    border-color: var(--sepia);
-  }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-clear {
-    background: transparent;
-    color: var(--ink);
-    padding: 12px 20px;
-    font-size: 0.68rem;
-  }
-  .btn-clear:hover:not(:disabled) {
-    background: transparent;
-    color: var(--rust);
-    border-color: var(--rust);
-  }
+    for (int i = 0; i < size; i++) mean += x[i];
+    mean /= size;
 
-  /* ---- Output ---- */
-  .output-section { margin-top: 32px; }
-  .output-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 12px;
-    border-bottom: 1px solid var(--aged);
-    padding-bottom: 8px;
-  }
-  .output-title {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--sepia);
-  }
-  .meta-chips {
-    display: flex;
-    gap: 12px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.65rem;
-    color: rgba(26,18,9,0.45);
-    flex-wrap: wrap;
-  }
-  #output {
-    font-size: 1.05rem;
-    line-height: 1.85;
-    min-height: 80px;
-    color: var(--ink);
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  #output .prompt-part { color: rgba(26,18,9,0.5); }
-  #output .gen-part    { color: var(--ink); }
-
-  /* Typewriter cursor */
-  .cursor {
-    display: inline-block;
-    width: 2px;
-    height: 1.1em;
-    background: var(--sepia);
-    vertical-align: text-bottom;
-    margin-left: 2px;
-    animation: blink 0.9s step-end infinite;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
-
-  /* ---- Spinner ---- */
-  .spinner {
-    display: none;
-    width: 16px; height: 16px;
-    border: 2px solid var(--aged);
-    border-top-color: var(--sepia);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    margin-left: 8px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* ---- Error ---- */
-  .error-msg {
-    display: none;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.8rem;
-    color: var(--rust);
-    margin-top: 12px;
-    padding: 10px 14px;
-    border-left: 3px solid var(--rust);
-    background: rgba(192,57,43,0.05);
-  }
-
-  /* ---- Example prompts ---- */
-  .examples {
-    margin-top: 28px;
-    padding-top: 20px;
-    border-top: 1px dashed var(--aged);
-  }
-  .ex-label {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.65rem;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: rgba(139,105,20,0.6);
-    margin-bottom: 10px;
-  }
-  .ex-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .ex-pill {
-    font-family: 'Playfair Display', serif;
-    font-size: 0.82rem;
-    font-style: italic;
-    padding: 5px 14px;
-    border: 1px solid var(--aged);
-    border-radius: 2px;
-    cursor: pointer;
-    color: rgba(26,18,9,0.6);
-    transition: all 0.15s;
-    background: transparent;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-  .ex-pill:hover {
-    border-color: var(--sepia);
-    color: var(--sepia);
-    background: rgba(139,105,20,0.04);
-  }
-
-  /* ---- Footer ---- */
-  footer {
-    margin-top: 48px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.63rem;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    color: rgba(26,18,9,0.3);
-    text-align: center;
-  }
-  footer span { color: var(--sepia); }
-
-  /* ---- Mobile responsiveness ---- */
-  @media (max-width: 640px) {
-    .controls-row { flex-direction: column; }
-    .perf-stats { grid-template-columns: 1fr 1fr; }
-    .status-badge { top: 10px; right: 10px; font-size: 0.6rem; }
-  }
-</style>
-</head>
-<body>
-
-<!-- Status Badge -->
-<div class="status-badge disconnected" id="status-badge">
-  <div class="status-dot"></div>
-  <span id="status-text">Disconnected</span>
-</div>
-
-<header>
-  <h1 class="masthead">The Story <em>Engine</em></h1>
-  <p class="subtitle">Custom SLM &nbsp;·&nbsp; C++ CPU Inference &nbsp;·&nbsp; GPT-2 Architecture</p>
-</header>
-
-<div class="card">
-
-  <!-- Performance Stats -->
-  <div class="perf-stats" id="perf-stats" style="display:none">
-    <div class="stat-item">
-      <div class="stat-value" id="stat-throughput">—</div>
-      <div class="stat-label">Tokens/Sec</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-value" id="stat-latency">—</div>
-      <div class="stat-label">ms/Token</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-value" id="stat-total">0</div>
-      <div class="stat-label">Total Tokens</div>
-    </div>
-  </div>
-
-  <div class="controls-row">
-    <div class="control-group">
-      <label>Max Tokens <span class="range-val" id="max-tokens-val">100</span></label>
-      <input type="range" id="max-tokens" min="20" max="400" value="100" step="10">
-    </div>
-    <div class="control-group">
-      <label>Temperature <span class="range-val" id="temp-val">0.8</span></label>
-      <input type="range" id="temperature" min="0.1" max="1.5" value="0.8" step="0.05">
-    </div>
-    <div class="control-group">
-      <label>Top-K <span class="range-val" id="topk-val">40</span></label>
-      <input type="range" id="topk" min="1" max="100" value="40" step="1">
-    </div>
-  </div>
-
-  <div class="prompt-wrap">
-    <span class="prompt-label">Your Prompt</span>
-    <textarea id="prompt" rows="3"
-      placeholder="Once upon a time, in a small village near the forest…"></textarea>
-  </div>
-
-  <div class="btn-row">
-    <button id="generate-btn" onclick="generate()">Generate</button>
-    <button class="btn-clear" onclick="clearOutput()">Clear</button>
-    <div class="spinner" id="spinner"></div>
-  </div>
-
-  <div class="error-msg" id="error-msg"></div>
-
-  <div class="output-section" id="output-section" style="display:none">
-    <div class="output-header">
-      <span class="output-title">Generated Story</span>
-      <div class="meta-chips">
-        <span id="meta-tokens"></span>
-        <span id="meta-latency"></span>
-        <span id="meta-speed"></span>
-      </div>
-    </div>
-    <div id="output"></div>
-  </div>
-
-  <div class="examples">
-    <p class="ex-label">Try these prompts</p>
-    <div class="ex-pills">
-      <button class="ex-pill" onclick="setPrompt(this)">Once upon a time, there was a little</button>
-      <button class="ex-pill" onclick="setPrompt(this)">The big dog was very angry because</button>
-      <button class="ex-pill" onclick="setPrompt(this)">Sara and Tom went to the park to</button>
-      <button class="ex-pill" onclick="setPrompt(this)">One day, a tiny dragon found a</button>
-      <button class="ex-pill" onclick="setPrompt(this)">The old wizard smiled and said,</button>
-    </div>
-  </div>
-
-</div>
-
-<footer>
-  Built with &nbsp;<span>C++ Inference Engine</span>&nbsp; + &nbsp;<span>FastAPI</span>&nbsp; + &nbsp;<span>tiktoken</span>
-</footer>
-
-<script>
-  const API_BASE = "";;
-
-  // ---- Performance tracking ----
-  let totalTokensGenerated = 0;
-  let avgThroughput = 0;
-  let avgLatencyPerToken = 0;
-  let numGenerations = 0;
-
-  // ---- Check server status on load ----
-  async function checkHealth() {
-    try {
-      const res = await fetch(`${API_BASE}/health`);
-      if (res.ok) {
-        const data = await res.json();
-        updateStatus(true, data);
-      } else {
-        updateStatus(false);
-      }
-    } catch {
-      updateStatus(false);
+    for (int i = 0; i < size; i++) {
+        float d = x[i] - mean;
+        var += d * d;
     }
-  }
+    var /= size;
 
-  function updateStatus(connected, data = null) {
-    const badge = document.getElementById('status-badge');
-    const text = document.getElementById('status-text');
-    
-    if (connected) {
-      badge.className = 'status-badge connected';
-      text.textContent = 'Connected';
-      
-      // Show model info if available
-      if (data && data.model_config) {
-        const cfg = data.model_config;
-        console.log(`Model: ${cfg.n_layer}L/${cfg.n_head}H/${cfg.n_embd}D, Vocab: ${cfg.vocab_size}`);
-      }
-    } else {
-      badge.className = 'status-badge disconnected';
-      text.textContent = 'Disconnected';
+    float scale = 1.0f / sqrtf(var + 1e-5f);
+
+    for (int i = 0; i < size; i++)
+        out[i] = (x[i] - mean) * scale * w[i] + b[i];
+}
+
+
+// AVX2 SIMD Matrix-Vector Multiplication with FMA (Fused Multiply-Add)
+// Processes 8 float32 elements per instruction cycle.
+static void matmul_vec(float* out, const float* mat, const float* x, int M, int K) {
+
+#pragma omp parallel for
+    for (int i = 0; i < M; i++) {
+        const float* row = mat + (long long)i * K;
+        
+       
+        __m256 sum_vec = _mm256_setzero_ps();
+        
+        int j = 0;
+       
+        for (; j <= K - 8; j += 8) {
+            
+            __m256 m_val = _mm256_loadu_ps(&row[j]);
+            __m256 x_val = _mm256_loadu_ps(&x[j]);
+            
+          
+            sum_vec = _mm256_fmadd_ps(m_val, x_val, sum_vec);
+        }
+        
+        
+        float sum_arr[8];
+        _mm256_storeu_ps(sum_arr, sum_vec);
+        float sum = sum_arr[0] + sum_arr[1] + sum_arr[2] + sum_arr[3] + 
+                    sum_arr[4] + sum_arr[5] + sum_arr[6] + sum_arr[7];
+
+       
+        for (; j < K; j++) {
+            sum += row[j] * x[j];
+        }
+
+        out[i] = sum;
     }
-  }
+}
 
-  // Check health on load and every 30s
-  checkHealth();
-  setInterval(checkHealth, 30000);
+static void add_bias(float* x, const float* b, int N) {
+#pragma omp parallel for
+    for (int i = 0; i < N; i++)
+        x[i] += b[i];
+}
 
-  // ---- Sync sliders ----
-  document.getElementById('max-tokens').addEventListener('input', e => {
-    document.getElementById('max-tokens-val').textContent = e.target.value;
-  });
-  document.getElementById('temperature').addEventListener('input', e => {
-    document.getElementById('temp-val').textContent = parseFloat(e.target.value).toFixed(2);
-  });
-  document.getElementById('topk').addEventListener('input', e => {
-    document.getElementById('topk-val').textContent = e.target.value;
-  });
+static void residual_add(float* x, const float* y, int N) {
+#pragma omp parallel for
+    for (int i = 0; i < N; i++)
+        x[i] += y[i];
+}
 
-  // ---- Generate ----
-  async function generate() {
-    const prompt = document.getElementById('prompt').value.trim();
-    if (!prompt) { showError("Please enter a prompt first."); return; }
+static void gelu_inplace(float* x, int N) {
+    const float c = 0.7978845608f;
 
-    const maxTokens  = parseInt(document.getElementById('max-tokens').value);
-    const temperature = parseFloat(document.getElementById('temperature').value);
-    const topK       = parseInt(document.getElementById('topk').value);
-
-    setLoading(true);
-    hideError();
-
-    try {
-      const res = await fetch(`${API_BASE}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          max_tokens: maxTokens,
-          temperature,
-          top_k: topK,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || `Server error: ${res.status}`);
-      }
-
-      const data = await res.json();
-      renderOutput(data);
-      updatePerfStats(data);
-
-    } catch (e) {
-      showError(e.message.includes('fetch')
-        ? 'Cannot connect to server. Is uvicorn running on port 8000?'
-        : e.message
-      );
-    } finally {
-      setLoading(false);
+#pragma omp parallel for
+    for (int i = 0; i < N; i++) {
+        float v = x[i];
+        float t = tanhf(c * (v + 0.044715f * v * v * v));
+        x[i] = 0.5f * v * (1.0f + t);
     }
-  }
+}
 
-  // ---- Update performance stats ----
-  function updatePerfStats(data) {
-    totalTokensGenerated += data.tokens_out;
-    numGenerations++;
-    
-    const throughput = (data.tokens_out / (data.latency_ms / 1000)).toFixed(1);
-    const latencyPerToken = (data.latency_ms / data.tokens_out).toFixed(2);
-    
-    // Running average
-    avgThroughput = ((avgThroughput * (numGenerations - 1)) + parseFloat(throughput)) / numGenerations;
-    avgLatencyPerToken = ((avgLatencyPerToken * (numGenerations - 1)) + parseFloat(latencyPerToken)) / numGenerations;
-    
-    document.getElementById('stat-throughput').textContent = avgThroughput.toFixed(1);
-    document.getElementById('stat-latency').textContent = avgLatencyPerToken.toFixed(2);
-    document.getElementById('stat-total').textContent = totalTokensGenerated;
-    document.getElementById('perf-stats').style.display = 'grid';
-  }
+static void softmax_inplace(float* x, int N) {
 
-  // ---- Typewriter render ----
-  function renderOutput(data) {
-    const section = document.getElementById('output-section');
-    const out     = document.getElementById('output');
+    float max_val = x[0];
+    for (int i = 1; i < N; i++)
+        if (x[i] > max_val) max_val = x[i];
 
-    section.style.display = 'block';
-    
-    const tokensPerSec = (data.tokens_out / (data.latency_ms / 1000)).toFixed(1);
-    
-    document.getElementById('meta-tokens').textContent =
-      `${data.tokens_in} in · ${data.tokens_out} out`;
-    document.getElementById('meta-latency').textContent =
-      `${data.latency_ms.toFixed(0)} ms`;
-    document.getElementById('meta-speed').textContent =
-      `${tokensPerSec} tok/s`;
-
-    const genText = data.generated_text;
-    out.innerHTML =
-      `<span class="prompt-part">${escHtml(data.prompt)}</span>` +
-      `<span class="gen-part" id="typewriter"></span>` +
-      `<span class="cursor" id="cursor"></span>`;
-
-    let i = 0;
-    const typed = document.getElementById('typewriter');
-    const speed = Math.max(10, Math.min(40, 3000 / genText.length));
-
-    function tick() {
-      if (i < genText.length) {
-        typed.textContent += genText[i++];
-        setTimeout(tick, speed);
-      } else {
-        const cursor = document.getElementById('cursor');
-        if (cursor) cursor.remove();
-      }
+    float sum = 0.0f;
+    for (int i = 0; i < N; i++) {
+        x[i] = expf(x[i] - max_val);
+        sum += x[i];
     }
-    tick();
-  }
 
-  function clearOutput() {
-    document.getElementById('output-section').style.display = 'none';
-    document.getElementById('output').innerHTML = '';
-    hideError();
-  }
+    for (int i = 0; i < N; i++)
+        x[i] /= sum;
+}
 
-  function setPrompt(el) {
-    document.getElementById('prompt').value = el.textContent;
-    document.getElementById('prompt').focus();
-  }
+static void forward(
+    int token_id,
+    int pos,
+    KVCache* kv,
+    float* x,
+    float* buf,
+    float* qkv_buf,
+    float* attn_buf,
+    float* ff_buf,
+    float* logits
+) {
+    const int C = cfg.n_embd;
+    const int H = cfg.n_head;
+    const int hs = C / H;
 
-  function setLoading(on) {
-    document.getElementById('generate-btn').disabled = on;
-    document.getElementById('spinner').style.display = on ? 'inline-block' : 'none';
-  }
+    float* content_row = W.wte + (long long)token_id * C;
+    float* pos_row = W.wpe + (long long)pos * C;
 
-  function showError(msg) {
-    const el = document.getElementById('error-msg');
-    el.textContent = msg;
-    el.style.display = 'block';
-  }
-  function hideError() {
-    document.getElementById('error-msg').style.display = 'none';
-  }
+#pragma omp parallel for
+    for (int i = 0; i < C; i++)
+        x[i] = content_row[i] + pos_row[i];
 
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
+    for (int l = 0; l < cfg.n_layer; l++) {
 
-  // Keyboard shortcut: Ctrl/Cmd + Enter to generate
-  document.getElementById('prompt').addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generate();
-  });
-</script>
+        layer_norm(buf, x, W.ln1_w[l], W.ln1_b[l], C);
 
-</body>
-</html>
+        matmul_vec(qkv_buf, W.c_attn_w[l], buf, 3 * C, C);
+        add_bias(qkv_buf, W.c_attn_b[l], 3 * C);
+
+        float* q = qkv_buf;
+        float* k = qkv_buf + C;
+        float* v = qkv_buf + 2 * C;
+
+        // --------------------------------------------------------
+        // KV-Cache: Store current position's K and V projections.
+        // Avoids recomputing attention for all previous tokens in the sequence.
+        // --------------------------------------------------------
+        float* k_cache = kv->k_cache + (long long)l * cfg.block_size * C;
+        float* v_cache = kv->v_cache + (long long)l * cfg.block_size * C;
+
+        memcpy(k_cache + (long long)pos * C, k, C * sizeof(float));
+        memcpy(v_cache + (long long)pos * C, v, C * sizeof(float));
+
+#pragma omp parallel for
+        for (int h = 0; h < H; h++) {
+
+            float* q_h = q + h * hs;
+            float scale = 1.0f / sqrtf((float)hs);
+            
+            
+            float* local_attn = attn_buf + h * cfg.block_size;
+
+            for (int t = 0; t <= pos; t++) {
+                float* k_h = k_cache + (long long)t * C + h * hs;
+                float dot = 0.0f;
+                for (int d = 0; d < hs; d++)
+                    dot += q_h[d] * k_h[d];
+
+                local_attn[t] = dot * scale;
+            }
+
+            softmax_inplace(local_attn, pos + 1);
+
+            float* out_h = buf + h * hs;
+            memset(out_h, 0, hs * sizeof(float));
+
+            for (int t = 0; t <= pos; t++) {
+                float* v_h = v_cache + (long long)t * C + h * hs;
+                float a = local_attn[t];
+                for (int d = 0; d < hs; d++)
+                    out_h[d] += a * v_h[d];
+            }
+        }
+
+        float* attn_out = qkv_buf;
+        matmul_vec(attn_out, W.c_proj_w[l], buf, C, C);
+        add_bias(attn_out, W.c_proj_b[l], C);
+        residual_add(x, attn_out, C);
+
+        layer_norm(buf, x, W.ln2_w[l], W.ln2_b[l], C);
+
+        matmul_vec(ff_buf, W.fc_w[l], buf, 4 * C, C);
+        add_bias(ff_buf, W.fc_b[l], 4 * C);
+        gelu_inplace(ff_buf, 4 * C);
+
+        matmul_vec(buf, W.mlp_proj_w[l], ff_buf, C, 4 * C);
+        add_bias(buf, W.mlp_proj_b[l], C);
+        residual_add(x, buf, C);
+    }
+
+    layer_norm(buf, x, W.ln_f_w, W.ln_f_b, C);
+    matmul_vec(logits, W.lm_head_w, buf, cfg.vocab_size, C);
+}
+
+// Zero-copy pointer mapping: maps the struct pointers directly into the
+// single contiguous memory buffer read from model.bin. Avoids memcpy overhead.
+static void map_weights(float* data) {
+
+    float* ptr = data;
+    const int C = cfg.n_embd;
+    const int L = cfg.n_layer;
+
+    W.wte = ptr; ptr += (long long)cfg.vocab_size * C;
+    W.wpe = ptr; ptr += (long long)cfg.block_size * C;
+
+    W.ln1_w = (float**)malloc(L * sizeof(float*));
+    W.ln1_b = (float**)malloc(L * sizeof(float*));
+    W.c_attn_w = (float**)malloc(L * sizeof(float*));
+    W.c_attn_b = (float**)malloc(L * sizeof(float*));
+    W.c_proj_w = (float**)malloc(L * sizeof(float*));
+    W.c_proj_b = (float**)malloc(L * sizeof(float*));
+    W.ln2_w = (float**)malloc(L * sizeof(float*));
+    W.ln2_b = (float**)malloc(L * sizeof(float*));
+    W.fc_w = (float**)malloc(L * sizeof(float*));
+    W.fc_b = (float**)malloc(L * sizeof(float*));
+    W.mlp_proj_w = (float**)malloc(L * sizeof(float*));
+    W.mlp_proj_b = (float**)malloc(L * sizeof(float*));
+
+    for (int l = 0; l < L; l++) {
+        W.ln1_w[l] = ptr; ptr += C;
+        W.ln1_b[l] = ptr; ptr += C;
+
+        W.c_attn_w[l] = ptr; ptr += 3LL * C * C;
+        W.c_attn_b[l] = ptr; ptr += 3LL * C;
+
+        W.c_proj_w[l] = ptr; ptr += 1LL * C * C;
+        W.c_proj_b[l] = ptr; ptr += C;
+
+        W.ln2_w[l] = ptr; ptr += C;
+        W.ln2_b[l] = ptr; ptr += C;
+
+        W.fc_w[l] = ptr; ptr += 4LL * C * C;
+        W.fc_b[l] = ptr; ptr += 4LL * C;
+
+        W.mlp_proj_w[l] = ptr; ptr += 1LL * C * 4 * C;
+        W.mlp_proj_b[l] = ptr; ptr += C;
+    }
+
+    W.ln_f_w = ptr; ptr += C;
+    W.ln_f_b = ptr; ptr += C;
+
+    W.lm_head_w = ptr;
+}
+
+
+int main(int argc, char* argv[]) {
+
+    if (argc < 3) {
+        printf("ERROR_ARGS");
+        return 1;
+    }
+
+    FILE* f = fopen("model.bin", "rb");
+    if (!f) {
+        printf("ERROR_MODEL_NOT_FOUND");
+        return 1;
+    }
+
+    fread(&cfg, sizeof(int), 5, f);
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 5 * sizeof(int), SEEK_SET);
+
+    model_data_buffer = (float*)malloc(file_size - 5 * sizeof(int));
+    fread(model_data_buffer, 1, file_size - 5 * sizeof(int), f);
+    fclose(f);
+
+    map_weights(model_data_buffer);
+
+    std::vector<int> input_ids;
+    char* token = strtok(argv[1], ",");
+    while (token) {
+        input_ids.push_back(atoi(token));
+        token = strtok(NULL, ",");
+    }
+
+    if (input_ids.size() >= (size_t)cfg.block_size)
+        input_ids.resize(cfg.block_size - 1);
+
+    int max_new_tokens = atoi(argv[2]);
+
+    float temperature = (argc > 3) ? atof(argv[3]) : 0.8f;
+    int top_k = (argc > 4) ? atoi(argv[4]) : 40;
+    if (temperature < 0.01f) temperature = 0.01f;
+    if (top_k < 1) top_k = 1;
+    if (top_k > cfg.vocab_size) top_k = cfg.vocab_size;
+
+    srand((unsigned int)time(NULL));
+
+    const int C = cfg.n_embd;
+
+    KVCache kv;
+    kv.k_cache = (float*)calloc((long long)cfg.n_layer * cfg.block_size * C, sizeof(float));
+    kv.v_cache = (float*)calloc((long long)cfg.n_layer * cfg.block_size * C, sizeof(float));
+
+    float* x = (float*)malloc(C * sizeof(float));
+    float* buf = (float*)malloc(C * sizeof(float));
+    float* qkv_buf = (float*)malloc(3 * C * sizeof(float));
+    
+    // Allocate enough space for ALL heads to process simultaneously
+    float* attn_buf = (float*)malloc(cfg.n_head * cfg.block_size * sizeof(float));
+    
+    float* ff_buf = (float*)malloc(4 * C * sizeof(float));
+    float* logits = (float*)malloc(cfg.vocab_size * sizeof(float));
+
+    for (int i = 0; i < (int)input_ids.size(); i++)
+        forward(input_ids[i], i, &kv, x, buf, qkv_buf, attn_buf, ff_buf, logits);
+
+    int pos = input_ids.size();
+
+    for (int i = 0; i < max_new_tokens; i++) {
+
+        if (pos >= cfg.block_size)
+            break;
+
+        for (int v = 0; v < cfg.vocab_size; v++)
+            logits[v] /= temperature;
+
+        std::vector<std::pair<float, int>> pairs(cfg.vocab_size);
+        for (int v = 0; v < cfg.vocab_size; v++)
+            pairs[v] = {logits[v], v};
+
+        std::partial_sort(pairs.begin(), pairs.begin() + top_k, pairs.end(),
+            [](const std::pair<float,int>& a, const std::pair<float,int>& b) {
+                return a.first > b.first;
+            });
+
+        float sum = 0.0f;
+        for (int j = 0; j < top_k; j++) {
+            pairs[j].first = expf(pairs[j].first);
+            sum += pairs[j].first;
+        }
+        for (int j = 0; j < top_k; j++)
+            pairs[j].first /= sum;
+
+        float r = (float)rand() / ((float)RAND_MAX + 1.0f);
+        float cum = 0.0f;
+        int best = pairs[0].second;
+        for (int j = 0; j < top_k; j++) {
+            cum += pairs[j].first;
+            if (r < cum) {
+                best = pairs[j].second;
+                break;
+            }
+        }
+
+        printf("%d ", best);
+
+        if (best == 50256)
+            break;
+
+        forward(best, pos, &kv, x, buf, qkv_buf, attn_buf, ff_buf, logits);
+        pos++;
+    }
+
+    free(model_data_buffer);
+    return 0;
+}
