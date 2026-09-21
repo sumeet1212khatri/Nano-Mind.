@@ -2,7 +2,7 @@
 
 Zero-dependency GPT-2-style transformer inference engine in C++17 with AVX2/FMA SIMD and OpenMP CPU acceleration.
 
-**Live Demo** | **[Hugging Face Spaces](https://huggingface.co/spaces/NOT-OMEGA/NanoMind)** | **[Live Site](https://nanomind.qd.je/)** | **[Preview Video](https://www.youtube.com/watch?v=OBEMQljAUis)**
+**Live Demo** | **[Hugging Face Spaces](https://huggingface.co/spaces/NOT-OMEGA/NanoMind)** | **[Live Site](https://nanomind.qd.je/)**
 
 ---
 
