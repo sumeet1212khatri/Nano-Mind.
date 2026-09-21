@@ -67,6 +67,11 @@ async def generate_text(req: GenerateRequest):
 
     try:
         start_time = time.perf_counter()
+        # --------------------------------------------------------
+        # Subprocess IPC Boundary:
+        # We pass the prompt tokens as a comma-separated string argument.
+        # The C++ binary executes completely isolated from the Python GIL.
+        # --------------------------------------------------------
         process = subprocess.run(
             [exe_path, token_str, str(req.max_tokens), str(req.temperature), str(req.top_k)],
             capture_output=True,
@@ -86,6 +91,7 @@ async def generate_text(req: GenerateRequest):
         output_str = process.stdout.strip()
         generated_ids = []
         if output_str:
+            # Parse space-separated token IDs printed to stdout by C++
             for x in output_str.split():
                 try:
                     generated_ids.append(int(x))
