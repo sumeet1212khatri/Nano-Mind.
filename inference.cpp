@@ -58,6 +58,8 @@ static void layer_norm(float* out, const float* x, const float* w, const float* 
 }
 
 
+// AVX2 SIMD Matrix-Vector Multiplication with FMA (Fused Multiply-Add)
+// Processes 8 float32 elements per instruction cycle.
 static void matmul_vec(float* out, const float* mat, const float* x, int M, int K) {
 
 #pragma omp parallel for
@@ -165,6 +167,10 @@ static void forward(
         float* k = qkv_buf + C;
         float* v = qkv_buf + 2 * C;
 
+        // --------------------------------------------------------
+        // KV-Cache: Store current position's K and V projections.
+        // Avoids recomputing attention for all previous tokens in the sequence.
+        // --------------------------------------------------------
         float* k_cache = kv->k_cache + (long long)l * cfg.block_size * C;
         float* v_cache = kv->v_cache + (long long)l * cfg.block_size * C;
 
@@ -222,6 +228,8 @@ static void forward(
     matmul_vec(logits, W.lm_head_w, buf, cfg.vocab_size, C);
 }
 
+// Zero-copy pointer mapping: maps the struct pointers directly into the
+// single contiguous memory buffer read from model.bin. Avoids memcpy overhead.
 static void map_weights(float* data) {
 
     float* ptr = data;
